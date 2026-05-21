@@ -45,18 +45,114 @@ def _compact_network_calls(network_calls: List[dict]) -> List[dict]:
     return compact
 
 
+def _compact_meta(meta: Optional[dict]) -> Optional[dict]:
+    if not isinstance(meta, dict):
+        return None
+
+    compact = {}
+    for key in (
+        "accessibleName",
+        "ariaLabel",
+        "dataTestId",
+        "href",
+        "label",
+        "name",
+        "placeholder",
+        "role",
+        "tag",
+        "text",
+        "type",
+    ):
+        value = _trim_text(meta.get(key), MAX_FIELD_CHARS)
+        if value:
+            compact[key] = value
+
+    selectors = meta.get("selectors")
+    if isinstance(selectors, list):
+        compact["selectors"] = [
+            _trim_text(selector, MAX_FIELD_CHARS)
+            for selector in selectors[:5]
+            if selector
+        ]
+    for key in ("fromFormState", "sensitive"):
+        if meta.get(key):
+            compact[key] = True
+    return compact or None
+
+
 def _compact_steps(steps: List[dict]) -> List[dict]:
     compact_steps = []
     for step in steps[:MAX_STEPS]:
-        compact_steps.append({
+        action = step.get("action")
+        compact_step = {
             "step_index": step.get("step_index"),
-            "action": step.get("action"),
+            "action": action,
             "url": _trim_text(step.get("url"), MAX_FIELD_CHARS),
             "selector": _trim_text(step.get("selector"), MAX_FIELD_CHARS),
             "value": _trim_text(step.get("value"), MAX_FIELD_CHARS),
+            "meta": _compact_meta(step.get("meta")),
             "network_calls": _compact_network_calls(step.get("network_calls", [])),
-        })
+        }
+        if action == "navigate":
+            compact_step["page_title"] = compact_step.pop("value")
+        compact_steps.append(compact_step)
     return compact_steps
+
+
+def _normalise_key(value: Optional[str]) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def _text_selector_value(selector: Optional[str]) -> Optional[str]:
+    if not isinstance(selector, str) or not selector.strip().startswith("text="):
+        return None
+    text = selector.strip()[len("text="):].strip()
+    return text.strip("\"'") or None
+
+
+def _recorded_click_selector(session_detail: dict, text: str) -> Optional[str]:
+    expected = _normalise_key(text)
+    selectors = []
+    for step in session_detail.get("steps", []):
+        if step.get("action") != "click" or not step.get("selector"):
+            continue
+
+        meta = step.get("meta") if isinstance(step.get("meta"), dict) else {}
+        names = [
+            step.get("value"),
+            meta.get("accessibleName"),
+            meta.get("ariaLabel"),
+            meta.get("label"),
+            meta.get("text"),
+        ]
+        if any(_normalise_key(name) == expected for name in names):
+            selectors.append(step["selector"])
+
+    selectors = list(dict.fromkeys(selectors))
+    return selectors[0] if len(selectors) == 1 else None
+
+
+def _normalise_generated_test_cases(test_cases: List[dict], session_detail: dict) -> List[dict]:
+    for test_case in test_cases:
+        for step in test_case.get("steps", []):
+            text_selector = _text_selector_value(step.get("selector"))
+            if step.get("action") == "click" and text_selector:
+                recorded_selector = _recorded_click_selector(session_detail, text_selector)
+                if recorded_selector:
+                    step["selector"] = recorded_selector
+                    logger.info("Normalised generated click '%s' to recorded selector", text_selector)
+
+            if step.get("action") != "assert_text":
+                continue
+            if isinstance(step.get("value"), str):
+                continue
+
+            selector = step.get("selector")
+            if isinstance(selector, str) and selector.strip().startswith("text="):
+                step["action"] = "assert_visible"
+                step["value"] = None
+                logger.info("Normalised generated text selector assertion to assert_visible")
+    return test_cases
 
 
 def understand_session(session_detail: dict) -> dict:
@@ -85,7 +181,9 @@ def understand_session(session_detail: dict) -> dict:
         step_desc = f"Step {step['step_index']}: {step['action']}"
         if step.get("selector"):
             step_desc += f" on '{step['selector']}'"
-        if step.get("value"):
+        if step.get("value") and step.get("action") == "navigate":
+            step_desc += f" with page title '{step['value']}'"
+        elif step.get("value"):
             step_desc += f" with value '{step['value']}'"
         if step.get("url"):
             step_desc += f" (URL: {step['url']})"
@@ -164,9 +262,16 @@ Generate comprehensive test cases. For EACH test case, provide:
 - type: one of "happy", "negative", "edge", "security"
 - steps: array of Playwright-compatible actions. Each step must have:
     - step_index: sequential number starting at 1
-    - action: one of "navigate", "click", "fill", "assert_text", "assert_visible", "select", "wait"
+    - action: one of "navigate", "click", "hover", "fill", "assert_text", "assert_visible", "select", "wait"
     - selector: CSS selector or Playwright selector (e.g., "#username", "text=Login", "[data-testid='submit']")
     - value: the value to use (URL for navigate, text for fill, expected text for assert_text, or null)
+- `assert_text` must always have a non-null string in `value`. Do not put the expected text only in a `text=...` selector.
+- If a `text=...` selector is enough to check that text is present, use `assert_visible` with `value: null`.
+- Recorded `navigate` steps may include `page_title` metadata. A browser title is not visible page text unless the DOM or screenshot shows it.
+- Do not invent CSS selectors for fill or select steps. Use selectors captured in the original recording; if a field selector was not recorded, do not generate an executable step for it.
+- Prefer recorded click selectors for buttons and links. A `text=...` click selector may be ambiguous when a heading or label uses the same text.
+- Use recorded `meta` fields such as role, label, accessibleName, href, and selector candidates to choose semantic but recorded targets.
+- Preserve recorded sensitive value placeholders like `{{secret:password}}` exactly. Never replace them with guessed or example credentials.
 - expected_result: what should happen when the test passes
 - reason: why this test matters for quality assurance
 
@@ -186,7 +291,10 @@ Return as a JSON object with a single key "test_cases" containing the array."""
             messages=[{"role": "user", "content": prompt}],
         )
         result = json.loads(response.choices[0].message.content)
-        test_cases = result.get("test_cases", [])
+        test_cases = _normalise_generated_test_cases(
+            result.get("test_cases", []),
+            session_detail,
+        )
         logger.info(f"Generated {len(test_cases)} test cases")
         return test_cases
     except Exception as e:

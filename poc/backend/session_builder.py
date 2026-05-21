@@ -13,7 +13,9 @@ class SessionBuilder:
     """Converts raw captured events into structured session steps."""
 
     # Event types that represent user actions (as opposed to metadata events)
-    ACTION_TYPES = {"click", "fill", "input", "change", "submit", "navigate", "select"}
+    ACTION_TYPES = {"click", "fill", "input", "change", "submit", "navigate", "select", "hover"}
+    INPUT_ACTION_TYPES = {"fill", "input", "change"}
+    TEXT_CONTROL_TYPES = {"email", "number", "password", "search", "tel", "text", "url"}
 
     def __init__(self, db: DBSession):
         self.db = db
@@ -86,24 +88,80 @@ class SessionBuilder:
                 network_buffer.append(event.network_data)
 
             # Only create a step for user actions
-            if event.event_type in self.ACTION_TYPES:
-                step_index += 1
-                steps.append(
-                    SessionStep(
-                        step_index=step_index,
-                        url=current_url,
-                        action=event.event_type,
-                        selector=event.selector,
-                        value=event.value,
-                        dom_snapshot=current_dom,
-                        screenshot_b64=current_screenshot,
-                        network_calls=list(network_buffer),
-                    )
-                )
-                # Reset network buffer after attaching to a step
+            if event.event_type not in self.ACTION_TYPES:
+                continue
+            if self._is_form_focus_click(event):
+                continue
+
+            action = "fill" if event.event_type in self.INPUT_ACTION_TYPES else event.event_type
+            if self._coalesce_fill_step(
+                steps,
+                event,
+                action,
+                current_dom,
+                current_screenshot,
+                current_url,
+                network_buffer,
+            ):
                 network_buffer = []
+                continue
+
+            step_index += 1
+            steps.append(
+                SessionStep(
+                    step_index=step_index,
+                    url=current_url,
+                    action=action,
+                    selector=event.selector,
+                    value=event.value,
+                    meta=event.meta,
+                    dom_snapshot=current_dom,
+                    screenshot_b64=current_screenshot,
+                    network_calls=list(network_buffer),
+                )
+            )
+            # Reset network buffer after attaching to a step
+            network_buffer = []
 
         return steps
+
+    def _coalesce_fill_step(
+        self,
+        steps: List[SessionStep],
+        event: Event,
+        action: str,
+        current_dom: Optional[str],
+        current_screenshot: Optional[str],
+        current_url: Optional[str],
+        network_buffer: List[dict],
+    ) -> bool:
+        if action != "fill" or not steps or not event.selector:
+            return False
+
+        previous = steps[-1]
+        if previous.action != "fill" or previous.selector != event.selector:
+            return False
+
+        previous.url = current_url
+        previous.value = event.value
+        previous.meta = event.meta
+        previous.dom_snapshot = current_dom
+        previous.screenshot_b64 = current_screenshot
+        previous.network_calls.extend(network_buffer)
+        return True
+
+    def _is_form_focus_click(self, event: Event) -> bool:
+        if event.event_type != "click" or not isinstance(event.meta, dict):
+            return False
+
+        tag = str(event.meta.get("tag") or "").lower()
+        input_type = str(event.meta.get("type") or "text").lower()
+        role = str(event.meta.get("role") or "").lower()
+        if tag in {"textarea", "select"}:
+            return True
+        if tag == "input" and input_type in self.TEXT_CONTROL_TYPES:
+            return True
+        return role in {"textbox", "combobox"} and tag not in {"button", "a"}
 
     def get_latest_screenshot(self, session_id: str) -> Optional[str]:
         """Return the most recent screenshot for a session."""

@@ -29,6 +29,7 @@ from session_builder import SessionBuilder
 from analyser import analyse_session
 from executor import execute_test_case
 from reasoning import analyse_failure
+from step_validation import validate_steps_against_session, validation_reason
 
 # ── Logging ─────────────────────────────────────────────────────
 
@@ -114,7 +115,7 @@ def receive_events(batch: EventBatch, db: DBSession = Depends(get_db)):
         saved += 1
 
     # Update step count (count action events)
-    action_types = {"click", "fill", "input", "change", "submit", "navigate", "select"}
+    action_types = {"click", "fill", "input", "change", "submit", "navigate", "select", "hover"}
     action_count = (
         db.query(Event)
         .filter(
@@ -329,8 +330,31 @@ def execute_test_case_endpoint(test_id: str, db: DBSession = Depends(get_db)):
     )
     base_url = session.url if session else None
 
-    # Execute
-    exec_result = execute_test_case(tc.steps, base_url)
+    builder = SessionBuilder(db)
+    detail = builder.build(tc.session_id)
+    validation_issues = validate_steps_against_session(
+        tc.steps,
+        detail.model_dump() if detail else {"steps": []},
+    )
+
+    # Execute only after generated interaction steps match recording evidence.
+    if validation_issues:
+        issue = validation_issues[0]
+        exec_result = {
+            "overall_status": "failed",
+            "duration_seconds": 0,
+            "step_results": [{
+                "step_index": issue.get("step_index", 0),
+                "action": issue.get("action"),
+                "selector": issue.get("selector"),
+                "status": "failed",
+                "error": issue.get("error"),
+                "screenshot_b64": None,
+                "duration_ms": 0,
+            }],
+        }
+    else:
+        exec_result = execute_test_case(tc.steps, base_url)
 
     # Save result
     test_result = TestResult(
@@ -356,7 +380,9 @@ def execute_test_case_endpoint(test_id: str, db: DBSession = Depends(get_db)):
         db.add(sr)
 
     # If failed, run AI reasoning
-    if exec_result["overall_status"] == "failed":
+    if validation_issues:
+        test_result.reasoning = validation_reason(validation_issues)
+    elif exec_result["overall_status"] == "failed":
         failed_step = None
         failed_screenshot = None
         for sr_data in exec_result["step_results"]:
@@ -367,7 +393,6 @@ def execute_test_case_endpoint(test_id: str, db: DBSession = Depends(get_db)):
 
         if failed_step:
             # Get network logs from the session
-            builder = SessionBuilder(db)
             network_logs = builder.get_all_network_calls(tc.session_id)
 
             reasoning = analyse_failure(

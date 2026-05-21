@@ -9,6 +9,7 @@ const BATCH_INTERVAL_MS = 2000;
 
 let isRecording = false;
 let sessionId = null;
+let recordingTabId = null;
 let eventBuffer = [];
 let batchTimer = null;
 let eventCount = 0;
@@ -31,15 +32,18 @@ async function startRecording() {
   eventBuffer = [];
   eventCount = 0;
 
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  recordingTabId = tabs[0] ? tabs[0].id : null;
+
   // Save state
   await chrome.storage.local.set({
     isRecording: true,
     sessionId: sessionId,
+    recordingTabId: recordingTabId,
     eventCount: 0,
   });
 
   // Notify content script in active tab
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   if (tabs[0]) {
     try {
       await chrome.tabs.sendMessage(tabs[0].id, { type: "START_RECORDING" });
@@ -69,10 +73,9 @@ async function stopRecording() {
   isRecording = false;
 
   // Notify content script
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tabs[0]) {
+  if (recordingTabId !== null) {
     try {
-      await chrome.tabs.sendMessage(tabs[0].id, { type: "STOP_RECORDING" });
+      await chrome.tabs.sendMessage(recordingTabId, { type: "STOP_RECORDING" });
     } catch (e) {}
   }
 
@@ -101,11 +104,13 @@ async function stopRecording() {
   await chrome.storage.local.set({
     isRecording: false,
     lastSessionId: sessionId,
+    recordingTabId: null,
     eventCount: eventCount,
   });
 
   console.log(`[AI Testing Agent] Recording stopped: ${sessionId}, ${eventCount} events`);
   sessionId = null;
+  recordingTabId = null;
 }
 
 // ── Flush event buffer to backend ──────────────────────────────
@@ -191,10 +196,15 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
 
   if (msg.type === "GET_STATE") {
     chrome.storage.local.get(
-      ["isRecording", "sessionId", "eventCount", "lastSessionId"],
+      ["isRecording", "sessionId", "recordingTabId", "eventCount", "lastSessionId"],
       (data) => {
+        const isRecordingTab =
+          !sender.tab ||
+          data.recordingTabId === null ||
+          data.recordingTabId === undefined ||
+          sender.tab.id === data.recordingTabId;
         sendResponse({
-          isRecording: data.isRecording || false,
+          isRecording: (data.isRecording || false) && isRecordingTab,
           sessionId: data.sessionId || null,
           eventCount: data.eventCount || eventCount,
           lastSessionId: data.lastSessionId || null,
@@ -226,6 +236,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
 
 chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
   if (!isRecording) return;
+  if (recordingTabId !== null && tabId !== recordingTabId) return;
   if (changeInfo.status === "complete") {
     captureScreenshot();
   }
@@ -233,10 +244,11 @@ chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
 
 // ── Restore state on service worker restart ────────────────────
 
-chrome.storage.local.get(["isRecording", "sessionId"], (data) => {
+chrome.storage.local.get(["isRecording", "sessionId", "recordingTabId"], (data) => {
   if (data.isRecording && data.sessionId) {
     isRecording = true;
     sessionId = data.sessionId;
+    recordingTabId = data.recordingTabId ?? null;
     batchTimer = setInterval(flushEvents, BATCH_INTERVAL_MS);
     console.log(`[AI Testing Agent] Restored recording: ${sessionId}`);
   }

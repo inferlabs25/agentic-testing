@@ -14,9 +14,28 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+REASONING_TIMEOUT_SECONDS = float(os.getenv("AI_REASONING_TIMEOUT_SECONDS", "20"))
+REASONING_MAX_RETRIES = int(os.getenv("AI_REASONING_MAX_RETRIES", "0"))
+
+client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    timeout=REASONING_TIMEOUT_SECONDS,
+    max_retries=REASONING_MAX_RETRIES,
+)
+
+
+def _known_execution_failure(failed_step: dict) -> Optional[str]:
+    action = failed_step.get("action", "")
+    error = str(failed_step.get("error", ""))
+    if action == "assert_text" and "value must be a string or regular expression" in error:
+        return (
+            "The generated assert_text step is malformed: Playwright needs the expected "
+            "text in the step value, but this assertion passed a null or non-string value. "
+            "Use a string value for assert_text, or use assert_visible when the text is "
+            "already encoded in a text= selector."
+        )
+    return None
 
 
 def analyse_failure(
@@ -40,6 +59,10 @@ def analyse_failure(
     Returns:
         Plain-language root cause string (2-3 sentences).
     """
+    known_failure = _known_execution_failure(failed_step)
+    if known_failure:
+        return known_failure
+
     content_parts = []
 
     # Include screenshot if available (multimodal)

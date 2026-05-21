@@ -51,6 +51,7 @@ class SessionStep(BaseModel):
     action: str
     selector: Optional[str] = None
     value: Optional[str] = None
+    meta: Optional[dict] = None
     dom_snapshot: Optional[str] = None
     screenshot_b64: Optional[str] = None
     network_calls: List[dict] = []
