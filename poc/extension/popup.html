@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=350">
+  <title>AI Testing Agent</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 340px;
+      min-height: 280px;
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #1e40af, #7c3aed);
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-icon {
+      width: 32px;
+      height: 32px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .header p {
+      font-size: 11px;
+      color: rgba(255,255,255,0.7);
+      margin-top: 2px;
+    }
+
+    .content {
+      padding: 16px 20px;
+    }
+
+    .status-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .status-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .status-label {
+      font-size: 12px;
+      color: #94a3b8;
+    }
+
+    .status-value {
+      font-size: 12px;
+      font-weight: 600;
+      color: #e2e8f0;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+
+    .status-dot.idle {
+      background: #64748b;
+    }
+
+    .status-dot.recording {
+      background: #ef4444;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.3); }
+    }
+
+    .record-btn {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .record-btn.start {
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      color: #fff;
+    }
+
+    .record-btn.start:hover {
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    }
+
+    .record-btn.stop {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      color: #fff;
+    }
+
+    .record-btn.stop:hover {
+      background: linear-gradient(135deg, #dc2626, #b91c1c);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+    }
+
+    .record-btn:active {
+      transform: translateY(0);
+    }
+
+    .record-icon {
+      font-size: 16px;
+    }
+
+    .footer {
+      padding: 12px 20px;
+      border-top: 1px solid #1e293b;
+      text-align: center;
+    }
+
+    .footer a {
+      color: #60a5fa;
+      font-size: 11px;
+      text-decoration: none;
+    }
+
+    .footer a:hover {
+      text-decoration: underline;
+    }
+
+    .event-counter {
+      font-size: 24px;
+      font-weight: 700;
+      color: #3b82f6;
+      text-align: center;
+      margin: 4px 0;
+    }
+
+    .session-id {
+      font-family: monospace;
+      font-size: 11px;
+      color: #60a5fa;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-icon">🧪</div>
+    <div>
+      <h1>AI Testing Agent</h1>
+      <p>Intelligent test recorder</p>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="status-card">
+      <div class="status-row">
+        <span class="status-label">Status</span>
+        <span class="status-value">
+          <span class="status-dot idle" id="statusDot"></span>
+          <span id="statusText">Idle</span>
+        </span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Events Captured</span>
+        <span class="status-value" id="eventCount">0</span>
+      </div>
+      <div class="status-row" id="sessionRow" style="display: none;">
+        <span class="status-label">Session</span>
+        <span class="session-id" id="sessionId">—</span>
+      </div>
+    </div>
+
+    <button class="record-btn start" id="recordBtn">
+      <span class="record-icon">⏺</span>
+      <span id="recordBtnText">Start Recording</span>
+    </button>
+  </div>
+
+  <div class="footer">
+    <a href="http://localhost:5173" target="_blank">Open Dashboard →</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

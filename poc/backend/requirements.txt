@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+openai>=1.40.0
+playwright
+python-dotenv
+pillow
