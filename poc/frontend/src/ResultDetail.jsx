@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from './api';
 
 export default function ResultDetail() {
   const { resultId } = useParams();
@@ -11,7 +11,7 @@ export default function ResultDetail() {
   useEffect(() => {
     const fetchResult = async () => {
       try {
-        const res = await axios.get(`/api/results/${resultId}`);
+        const res = await api.get(`/api/results/${resultId}`);
         setResult(res.data);
       } catch (err) {
         console.error('Failed to fetch result:', err);
@@ -69,6 +69,12 @@ export default function ResultDetail() {
             <p className="text-slate-400 text-sm">
               Executed on {new Date(result.created_at).toLocaleString()} • Duration: {result.duration_seconds}s
             </p>
+            {result.failure_category && (
+              <p className="text-slate-400 text-sm mt-2">
+                Failure category: <span className="text-red-300">{result.failure_category}</span>
+                {result.confidence ? ` (${Math.round(result.confidence * 100)}% confidence)` : ''}
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -101,6 +107,16 @@ export default function ResultDetail() {
                       </div>
                       <div className="text-xs text-slate-500">{step.duration_ms}ms</div>
                     </div>
+                    {step.selector_used && step.selector_used !== step.selector && (
+                      <div className="text-xs text-emerald-300 mt-1">
+                        Healed selector: {step.selector_used}
+                      </div>
+                    )}
+                    {step.healing_applied && (
+                      <div className="text-xs text-blue-300 mt-1">
+                        Recovery: {step.healing_reason || 'selector fallback'}
+                      </div>
+                    )}
                     {step.error && (
                       <div className="mt-2 text-xs text-red-400 bg-red-500/10 p-2 rounded border border-red-500/20 font-mono overflow-x-auto">
                         {step.error}
@@ -123,6 +139,27 @@ export default function ResultDetail() {
               </div>
               <div className="p-5 text-slate-300 text-sm leading-relaxed">
                 {result.reasoning}
+                {result.reasoning_json?.recommended_fix && (
+                  <div className="mt-4 rounded-lg bg-slate-950/60 border border-slate-700 p-3">
+                    <div className="text-xs uppercase text-slate-500 mb-1">Recommended Fix</div>
+                    <div>{result.reasoning_json.recommended_fix}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {result.artifact_paths && result.artifact_paths.length > 0 && (
+            <div className="glass-card overflow-hidden">
+              <div className="p-4 border-b border-slate-700/50 bg-slate-900/50">
+                <h3 className="font-semibold text-white">Artifacts</h3>
+              </div>
+              <div className="p-4 space-y-2">
+                {result.artifact_paths.map((path) => (
+                  <div key={path} className="text-xs font-mono text-slate-400 break-all">
+                    {path}
+                  </div>
+                ))}
               </div>
             </div>
           )}

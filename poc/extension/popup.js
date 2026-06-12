@@ -10,6 +10,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const eventCountEl = document.getElementById("eventCount");
   const sessionIdEl = document.getElementById("sessionId");
   const sessionRow = document.getElementById("sessionRow");
+  const statusCard = document.querySelector(".status-card");
 
   let isRecording = false;
   let pollTimer = null;
@@ -52,6 +53,17 @@ document.addEventListener("DOMContentLoaded", function () {
     eventCountEl.textContent = state.eventCount || 0;
   }
 
+  function showError(message) {
+    let errorEl = document.getElementById("errorText");
+    if (!errorEl) {
+      errorEl = document.createElement("div");
+      errorEl.id = "errorText";
+      errorEl.style.cssText = "margin-top:10px;color:#fecaca;background:#7f1d1d;padding:8px;border-radius:8px;font-size:11px;line-height:1.4;";
+      statusCard.appendChild(errorEl);
+    }
+    errorEl.textContent = message;
+  }
+
   // ── Button click handler ─────────────────────────────────────
 
   recordBtn.addEventListener("click", function () {
@@ -77,6 +89,10 @@ document.addEventListener("DOMContentLoaded", function () {
         function (response) {
           recordBtn.disabled = false;
           recordBtn.style.opacity = "1";
+          if (!response || response.status === "error") {
+            showError(response && response.error ? response.error : "Unable to start recording.");
+            return;
+          }
           isRecording = true;
           loadState();
           startPolling();

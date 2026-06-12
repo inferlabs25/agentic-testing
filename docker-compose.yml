@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ai_testing
+      POSTGRES_USER: ai_testing
+      POSTGRES_PASSWORD: ai_testing_change_me
+    ports:
+      - "5432:5432"
+    volumes:
+      - pilot-postgres:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./poc/backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://ai_testing:ai_testing_change_me@postgres:5432/ai_testing
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+      CORS_ORIGINS: http://localhost:5173,http://localhost:8080
+      PILOT_AUTH_REQUIRED: ${PILOT_AUTH_REQUIRED:-true}
+      PILOT_API_KEY: ${PILOT_API_KEY}
+      ARTIFACT_DIR: /app/artifacts
+      PLAYWRIGHT_RECORD_TRACE: "true"
+      PLAYWRIGHT_RECORD_VIDEO: "false"
+    depends_on:
+      - postgres
+    ports:
+      - "8000:8000"
+    volumes:
+      - pilot-artifacts:/app/artifacts
+
+  frontend:
+    build:
+      context: ./poc/frontend
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  pilot-postgres:
+  pilot-artifacts:

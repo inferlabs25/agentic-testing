@@ -64,6 +64,7 @@ class SessionDetail(BaseModel):
     status: str
     steps: List[SessionStep]
     created_at: datetime
+    auth_context: Optional[dict] = None
 
 
 # ── Test case responses ──────────────────────────────────────────
@@ -83,6 +84,10 @@ class TestCaseResponse(BaseModel):
     steps: List[dict]
     expected_result: Optional[str] = None
     reason: Optional[str] = None
+    readiness_status: str = "ready_to_run"
+    readiness_reason: Optional[str] = None
+    locator_candidates: Optional[list] = None
+    evidence_source: Optional[dict] = None
     status: str
     created_at: datetime
 
@@ -90,10 +95,34 @@ class TestCaseResponse(BaseModel):
         from_attributes = True
 
 
+class TestCaseUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    test_type: Optional[str] = None
+    steps: Optional[List[dict]] = None
+    expected_result: Optional[str] = None
+    reason: Optional[str] = None
+
+
 class AnalyseResponse(BaseModel):
     status: str
-    test_cases_generated: int
+    job_id: Optional[str] = None
+    test_cases_generated: int = 0
     understanding: Optional[dict] = None
+
+
+class JobResponse(BaseModel):
+    id: str
+    job_type: str
+    target_id: Optional[str] = None
+    status: str
+    progress_current: int = 0
+    progress_total: int = 0
+    message: Optional[str] = None
+    result: Optional[dict] = None
+    error: Optional[str] = None
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
 
 
 # ── Result responses ─────────────────────────────────────────────
@@ -102,10 +131,13 @@ class StepResultResponse(BaseModel):
     step_index: int
     action: Optional[str] = None
     selector: Optional[str] = None
+    selector_used: Optional[str] = None
     status: str
     error: Optional[str] = None
     screenshot_b64: Optional[str] = None
     duration_ms: Optional[float] = None
+    healing_applied: bool = False
+    healing_reason: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -118,6 +150,10 @@ class TestResultResponse(BaseModel):
     test_case_type: Optional[str] = None
     overall_status: str
     reasoning: Optional[str] = None
+    reasoning_json: Optional[dict] = None
+    failure_category: Optional[str] = None
+    confidence: Optional[float] = None
+    artifact_paths: Optional[list] = None
     duration_seconds: Optional[float] = None
     step_results: List[StepResultResponse] = []
     created_at: datetime
@@ -128,10 +164,35 @@ class TestResultResponse(BaseModel):
 
 class ExecuteResponse(BaseModel):
     status: str
-    result_id: str
-    overall_status: str
+    job_id: Optional[str] = None
+    result_id: Optional[str] = None
+    overall_status: Optional[str] = None
 
 
 class ApproveResponse(BaseModel):
     status: str
     test_case_id: str
+
+
+class SuiteRunResponse(BaseModel):
+    id: str
+    session_id: str
+    job_id: Optional[str] = None
+    status: str
+    total_count: int
+    passed_count: int
+    failed_count: int
+    current_test_case_id: Optional[str] = None
+    duration_seconds: Optional[float] = None
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+
+class DashboardMetrics(BaseModel):
+    sessions_recorded: int
+    tests_generated: int
+    ready_to_run: int
+    suggested_review: int
+    suite_pass_rate: float
+    failure_categories: dict
+    estimated_minutes_saved: int

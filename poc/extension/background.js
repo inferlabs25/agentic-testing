@@ -6,6 +6,11 @@
 
 const BACKEND_URL = "http://localhost:8000";
 const BATCH_INTERVAL_MS = 2000;
+const ALLOWED_CAPTURE_ORIGINS = [
+  "https://inexus.inferai.ai",
+  "http://localhost",
+  "http://127.0.0.1"
+];
 
 let isRecording = false;
 let sessionId = null;
@@ -24,6 +29,16 @@ function generateSessionId() {
   }
 }
 
+function isAllowedUrl(url) {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return ALLOWED_CAPTURE_ORIGINS.some((origin) => parsed.origin === origin);
+  } catch {
+    return false;
+  }
+}
+
 // ── Start recording ────────────────────────────────────────────
 
 async function startRecording() {
@@ -34,6 +49,12 @@ async function startRecording() {
 
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   recordingTabId = tabs[0] ? tabs[0].id : null;
+  if (!tabs[0] || !isAllowedUrl(tabs[0].url)) {
+    isRecording = false;
+    sessionId = null;
+    recordingTabId = null;
+    throw new Error("This site is not in ALLOWED_CAPTURE_ORIGINS for pilot recording.");
+  }
 
   // Save state
   await chrome.storage.local.set({
@@ -181,9 +202,13 @@ async function captureScreenshot() {
 
 chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   if (msg.type === "START_RECORDING_CMD") {
-    startRecording().then(() => {
-      sendResponse({ status: "ok", sessionId: sessionId });
-    });
+    startRecording()
+      .then(() => {
+        sendResponse({ status: "ok", sessionId: sessionId });
+      })
+      .catch((error) => {
+        sendResponse({ status: "error", error: error.message });
+      });
     return true; // async response
   }
 
@@ -215,7 +240,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   }
 
   if (msg.type === "CAPTURED_EVENT") {
-    if (isRecording && sessionId) {
+    if (isRecording && sessionId && isAllowedUrl(msg.event && msg.event.url)) {
       eventBuffer.push(msg.event);
       eventCount++;
       // Update count in storage for popup
@@ -238,7 +263,9 @@ chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
   if (!isRecording) return;
   if (recordingTabId !== null && tabId !== recordingTabId) return;
   if (changeInfo.status === "complete") {
-    captureScreenshot();
+    if (isAllowedUrl(tab.url)) {
+      captureScreenshot();
+    }
   }
 });
 

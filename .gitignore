@@ -3,6 +3,7 @@ __pycache__/
 *.log
 .poc.db
 poc/backend/poc.db*
+poc/backend/artifacts/
 .env
 .env.*
 !.env.example

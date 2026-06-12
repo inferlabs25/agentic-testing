@@ -52,6 +52,16 @@ def validate_steps_against_session(steps: List[dict], session_detail: dict) -> L
     return issues
 
 
+def selector_has_session_evidence(selector: object, action: str, session_detail: dict) -> bool:
+    if not isinstance(selector, str) or not selector.strip():
+        return False
+    return _selector_is_supported(selector, action, _build_evidence(session_detail))
+
+
+def selector_evidence_error(selector: object, action: str, session_detail: dict) -> str:
+    return _unsupported_selector_error(str(selector or ""), action, _build_evidence(session_detail))
+
+
 def validation_reason(issues: List[dict]) -> str:
     first = issues[0] if issues else {}
     step_index = first.get("step_index", "?")
@@ -149,13 +159,13 @@ def _selector_is_supported(selector: str, action: str, evidence: dict) -> bool:
 
 
 def _css_selector_has_dom_evidence(selector: str, dom_snapshots: Iterable[str]) -> bool:
-    ids = ID_PATTERN.findall(selector)
-    if ids and any(_attribute_in_dom("id", element_id, dom_snapshots) for element_id in ids):
-        return True
-
     attrs = ATTR_PATTERN.findall(selector)
-    if attrs and any(_attribute_in_dom(name, value, dom_snapshots) for name, value in attrs):
-        return True
+    if attrs:
+        return any(_attribute_in_dom(name, value, dom_snapshots) for name, value in attrs)
+
+    ids = [element_id for element_id in ID_PATTERN.findall(selector) if element_id.lower() not in {"root", "app", "__next"}]
+    if ids:
+        return any(_attribute_in_dom("id", element_id, dom_snapshots) for element_id in ids)
 
     tag_attr = TAG_ATTR_PATTERN.match(selector)
     if tag_attr:

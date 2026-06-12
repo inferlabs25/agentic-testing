@@ -19,6 +19,87 @@
   const INPUT_DEBOUNCE_MS = 700;
   const SCREENSHOT_THROTTLE_MS = 750;
 
+  function detectAuthState() {
+    const url = window.location.href;
+    const path = window.location.pathname.toLowerCase();
+    
+    // 1. URL path check
+    const isPublicRoute = path === "/" || 
+                          path.includes("/login") || 
+                          path.includes("/signin") || 
+                          path.includes("/signup") || 
+                          path.includes("/register") || 
+                          path.includes("/auth");
+    
+    // 2. DOM Indicators
+    const domSignals = [];
+    const checkSelectors = [
+      "nav", ".navbar", ".sidebar", "#sidebar", ".dashboard", "#dashboard",
+      "[class*='logout']", "[id*='logout']", "[href*='logout']", "[href*='signout']",
+      "[class*='avatar']", "[id*='avatar']", ".avatar", "#avatar",
+      "[class*='profile']", "[id*='profile']", "[href*='profile']",
+      "[class*='user-menu']", "[id*='user-menu']"
+    ];
+    checkSelectors.forEach(sel => {
+      try {
+        if (document.querySelector(sel)) {
+          domSignals.push(`dom_has_${sel.replace(/[^a-z0-9]/g, '_')}`);
+        }
+      } catch (e) {}
+    });
+    
+    // 3. Storage Indicators
+    const storageSignals = [];
+    const authKeys = ["token", "jwt", "access_token", "session", "auth", "user", "userid", "username"];
+    
+    // LocalStorage
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i).toLowerCase();
+        if (authKeys.some(k => key.includes(k))) {
+          storageSignals.push(`localStorage:${localStorage.key(i)}`);
+        }
+      }
+    } catch (e) {}
+    
+    // SessionStorage
+    try {
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i).toLowerCase();
+        if (authKeys.some(k => key.includes(k))) {
+          storageSignals.push(`sessionStorage:${sessionStorage.key(i)}`);
+        }
+      }
+    } catch (e) {}
+    
+    // Cookies
+    try {
+      const cookies = document.cookie.split(";");
+      cookies.forEach(cookie => {
+        const key = cookie.split("=")[0].trim().toLowerCase();
+        if (authKeys.some(k => key.includes(k))) {
+          storageSignals.push(`cookie:${cookie.split("=")[0].trim()}`);
+        }
+      });
+    } catch (e) {}
+    
+    const detectedSignals = [];
+    if (!isPublicRoute) {
+      detectedSignals.push("url_is_protected");
+    }
+    detectedSignals.push(...domSignals);
+    detectedSignals.push(...storageSignals);
+    
+    const requiresAuth = !isPublicRoute || domSignals.length > 0 || storageSignals.length > 0;
+    
+    return {
+      requires_auth: requiresAuth,
+      start_state: requiresAuth ? "authenticated" : "anonymous",
+      detected_signals: detectedSignals,
+      start_url: url
+    };
+  }
+
   function beginRecording(resetQueue) {
     const wasRecording = isRecording;
     isRecording = true;
@@ -27,6 +108,17 @@
     }
     if (!wasRecording) {
       capturePageSnapshot();
+      
+      // Send auth_context event on recording start
+      const authCtx = detectAuthState();
+      sendEvent({
+        event_type: "auth_context",
+        timestamp: Date.now() / 1000,
+        url: window.location.href,
+        selector: null,
+        value: null,
+        meta: authCtx
+      });
     }
   }
 

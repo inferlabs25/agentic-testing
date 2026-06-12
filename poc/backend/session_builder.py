@@ -41,6 +41,12 @@ class SessionBuilder:
             .all()
         )
 
+        auth_context = None
+        for event in events:
+            if event.event_type == "auth_context":
+                auth_context = event.meta
+                break
+
         if not events:
             return SessionDetail(
                 session_id=session_id,
@@ -49,6 +55,7 @@ class SessionBuilder:
                 status=recording.status,
                 steps=[],
                 created_at=recording.created_at,
+                auth_context=None,
             )
 
         steps = self._group_into_steps(events)
@@ -60,6 +67,7 @@ class SessionBuilder:
             status=recording.status,
             steps=steps,
             created_at=recording.created_at,
+            auth_context=auth_context,
         )
 
     def _group_into_steps(self, events: List[Event]) -> List[SessionStep]:

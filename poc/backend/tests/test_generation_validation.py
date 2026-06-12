@@ -8,8 +8,8 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_ROOT))
 
 from analyser import _normalise_generated_test_cases
-from executor import _resolve_step_value
-from step_validation import validate_steps_against_session
+from executor import _candidate_selectors, _resolve_step_value
+from step_validation import selector_has_session_evidence, validate_steps_against_session
 
 
 class GeneratedStepTests(unittest.TestCase):
@@ -58,6 +58,30 @@ class GeneratedStepTests(unittest.TestCase):
         steps = [{"step_index": 1, "action": "fill", "selector": "#email", "value": "x"}]
 
         self.assertEqual(validate_steps_against_session(steps, session), [])
+
+    def test_root_id_does_not_validate_nested_missing_assertion_selector(self):
+        session = {
+            "steps": [{
+                "action": "navigate",
+                "dom_snapshot": '<div id="root"><main>Dashboard</main></div>',
+            }]
+        }
+
+        self.assertFalse(
+            selector_has_session_evidence(
+                "#root > div[data-testid='dashboard']",
+                "assert_visible",
+                session,
+            )
+        )
+
+    def test_assertion_selector_gets_stable_text_fallback(self):
+        candidates = _candidate_selectors({
+            "action": "assert_visible",
+            "selector": "#root > div[data-testid='dashboard']",
+        })
+
+        self.assertIn(("text-derived", "text=Dashboard"), candidates)
 
     def test_secret_placeholder_uses_backend_environment(self):
         with patch.dict("os.environ", {"TEST_SECRET_PASSWORD": "s3cret"}, clear=False):

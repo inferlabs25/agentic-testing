@@ -251,8 +251,21 @@ def generate_test_cases(understanding: dict, session_detail: dict) -> List[dict]
     compact_steps = _compact_steps(session_detail.get("steps", []))
     steps_json = json.dumps(compact_steps, indent=2)
 
+    auth_ctx = session_detail.get("auth_context")
+    auth_summary = "None detected"
+    if isinstance(auth_ctx, dict):
+        auth_summary = (
+            f"Requires Auth: {auth_ctx.get('requires_auth')}\n"
+            f"- Start state: {auth_ctx.get('start_state')}\n"
+            f"- Detected signals: {', '.join(auth_ctx.get('detected_signals', []))}\n"
+            f"- Start URL: {auth_ctx.get('start_url')}"
+        )
+
     prompt = f"""Based on this application understanding:
 {json.dumps(understanding, indent=2)}
+
+Authentication Context:
+{auth_summary}
 
 And the original recorded session steps:
 {steps_json}
@@ -274,6 +287,20 @@ Generate comprehensive test cases. For EACH test case, provide:
 - Preserve recorded sensitive value placeholders like `{{secret:password}}` exactly. Never replace them with guessed or example credentials.
 - expected_result: what should happen when the test passes
 - reason: why this test matters for quality assurance
+
+CRITICAL FLOW CONSTRUCTION RULES:
+- If the session started from an already-authenticated page (Requires Auth: True in Authentication Context), every generated test MUST begin with a navigate to the login page, fill credentials, click sign-in, and then navigate through menus to reach the target module.
+- Never generate a test that starts with a click/fill on an internal page element as its first meaningful action after navigation.
+- Reconstruct the full user journey: Login -> Dashboard -> Module Navigation -> Target Action.
+- Every executable test must start with an explicit `navigate` step to the login page or first relevant URL.
+
+SELECTOR STRATEGY (priority order):
+1. data-testid attributes
+2. role locators with accessible name
+3. aria-label selectors
+4. visible text selectors
+5. stable semantic CSS (e.g., #element-id, [name="field"])
+6. Deep CSS paths ONLY as last resort — prefer recorded selectors from meta.selectors
 
 Generate at least 8 test cases covering:
 - 2-3 happy path cases (normal successful flows)

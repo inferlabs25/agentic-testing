@@ -6,3 +6,4 @@ openai>=1.40.0
 playwright
 python-dotenv
 pillow
+psycopg[binary]

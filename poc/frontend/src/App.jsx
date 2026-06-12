@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-do
 import Sessions from './Sessions';
 import TestCases from './TestCases';
 import ResultDetail from './ResultDetail';
+import SuiteRunDetail from './SuiteRunDetail';
 
 function Sidebar() {
   const location = useLocation();
@@ -58,6 +59,7 @@ function App() {
               <Route path="/" element={<Sessions />} />
               <Route path="/sessions/:sessionId/testcases" element={<TestCases />} />
               <Route path="/results/:resultId" element={<ResultDetail />} />
+              <Route path="/suite-runs/:runId" element={<SuiteRunDetail />} />
             </Routes>
           </div>
         </main>
